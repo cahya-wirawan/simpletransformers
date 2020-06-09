@@ -55,6 +55,9 @@ from transformers import (
     ElectraTokenizer,
     FlaubertConfig,
     FlaubertTokenizer,
+    LongformerConfig,
+    LongformerForSequenceClassification,
+    LongformerTokenizer,
     RobertaConfig,
     RobertaTokenizer,
     XLMConfig,
@@ -96,16 +99,17 @@ class ClassificationModel:
         """  # noqa: ignore flake8"
 
         MODEL_CLASSES = {
+            "albert": (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
             "bert": (BertConfig, BertForSequenceClassification, BertTokenizer),
+            "camembert": (CamembertConfig, CamembertForSequenceClassification, CamembertTokenizer),
+            "distilbert": (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
+            "electra": (ElectraConfig, ElectraForSequenceClassification, ElectraTokenizer),
+            "flaubert": (FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer),
+            "longformer": (LongformerConfig, LongformerForSequenceClassification, LongformerTokenizer),
+            "roberta": (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
             "xlnet": (XLNetConfig, XLNetForSequenceClassification, XLNetTokenizer),
             "xlm": (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
-            "roberta": (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
-            "distilbert": (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer),
-            "albert": (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
-            "camembert": (CamembertConfig, CamembertForSequenceClassification, CamembertTokenizer),
             "xlmroberta": (XLMRobertaConfig, XLMRobertaForSequenceClassification, XLMRobertaTokenizer),
-            "flaubert": (FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer),
-            "electra": (ElectraConfig, ElectraForSequenceClassification, ElectraTokenizer),
         }
 
         if args and "manual_seed" in args:
@@ -249,13 +253,13 @@ class ClassificationModel:
             if "text" in train_df.columns and "labels" in train_df.columns:
                 train_examples = [
                     InputExample(i, text, None, label)
-                    for i, (text, label) in enumerate(zip(train_df["text"], train_df["labels"]))
+                    for i, (text, label) in enumerate(zip(train_df["text"].astype(str), train_df["labels"]))
                 ]
             elif "text_a" in train_df.columns and "text_b" in train_df.columns:
                 train_examples = [
                     InputExample(i, text_a, text_b, label)
                     for i, (text_a, text_b, label) in enumerate(
-                        zip(train_df["text_a"], train_df["text_b"], train_df["labels"])
+                        zip(train_df["text_a"].astype(str), train_df["text_b"].astype(str), train_df["labels"])
                     )
                 ]
             else:
@@ -465,7 +469,7 @@ class ClassificationModel:
                         results, _, _ = self.eval_model(
                             eval_df,
                             verbose=verbose and args["evaluate_during_training_verbose"],
-                            silent=True,
+                            silent=args["evaluate_during_training_silent"],
                             **kwargs,
                         )
                         for key, value in results.items():
@@ -557,7 +561,10 @@ class ClassificationModel:
 
             if args["evaluate_during_training"]:
                 results, _, _ = self.eval_model(
-                    eval_df, verbose=verbose and args["evaluate_during_training_verbose"], silent=True, **kwargs
+                    eval_df,
+                    verbose=verbose and args["evaluate_during_training_verbose"],
+                    silent=args["evaluate_during_training_silent"],
+                    **kwargs,
                 )
 
                 self._save_model(output_dir_current, optimizer, scheduler, results=results)
@@ -669,13 +676,13 @@ class ClassificationModel:
             if "text" in eval_df.columns and "labels" in eval_df.columns:
                 eval_examples = [
                     InputExample(i, text, None, label)
-                    for i, (text, label) in enumerate(zip(eval_df["text"], eval_df["labels"]))
+                    for i, (text, label) in enumerate(zip(eval_df["text"].astype(str), eval_df["labels"]))
                 ]
             elif "text_a" in eval_df.columns and "text_b" in eval_df.columns:
                 eval_examples = [
                     InputExample(i, text_a, text_b, label)
                     for i, (text_a, text_b, label) in enumerate(
-                        zip(eval_df["text_a"], eval_df["text_b"], eval_df["labels"])
+                        zip(eval_df["text_a"].astype(str), eval_df["text_b"].astype(str), eval_df["labels"])
                     )
                 ]
             else:
@@ -829,7 +836,7 @@ class ClassificationModel:
                 sep_token=tokenizer.sep_token,
                 # RoBERTa uses an extra separator b/w pairs of sentences,
                 # cf. github.com/pytorch/fairseq/commit/1684e166e3da03f5b600dbb7855cb98ddfcd0805
-                sep_token_extra=bool(args["model_type"] in ["roberta", "camembert", "xlmroberta"]),
+                sep_token_extra=bool(args["model_type"] in ["roberta", "camembert", "xlmroberta", "longformer"]),
                 # PAD on the left for XLNet
                 pad_on_left=bool(args["model_type"] in ["xlnet"]),
                 pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
@@ -841,6 +848,7 @@ class ClassificationModel:
                 sliding_window=args["sliding_window"],
                 flatten=not evaluate,
                 stride=args["stride"],
+                add_prefix_space=bool(args["model_type"] in ["roberta", "camembert", "xlmroberta", "longformer"]),
                 args=args,
             )
             if verbose and args["sliding_window"]:

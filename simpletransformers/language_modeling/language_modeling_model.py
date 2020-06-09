@@ -132,27 +132,6 @@ class LanguageModelingModel:
             if "n_gpu" in args and args["n_gpu"] > 0:
                 torch.cuda.manual_seed_all(args["manual_seed"])
 
-        if args["local_rank"] != -1:
-            logger.info(f'local_rank: {args["local_rank"]}')
-            torch.distributed.init_process_group(backend="nccl")
-            cuda_device = args["local_rank"]
-
-        if use_cuda:
-            if torch.cuda.is_available():
-                if cuda_device == -1:
-                    self.device = torch.device("cuda")
-                else:
-                    self.device = torch.device(f"cuda:{cuda_device}")
-            else:
-                raise ValueError(
-                    "'use_cuda' set to True when cuda is unavailable."
-                    " Make sure CUDA is available or set use_cuda=False."
-                )
-        else:
-            self.device = "cpu"
-
-        self.results = {}
-
         self.args = {
             "block_size": -1,
             "config_name": None,
@@ -183,11 +162,29 @@ class LanguageModelingModel:
         if args:
             self.args.update(args)
 
+        if self.args["local_rank"] != -1:
+            logger.info(f'local_rank: {self.args["local_rank"]}')
+            torch.distributed.init_process_group(backend="nccl")
+            cuda_device = self.args["local_rank"]
+
+        if use_cuda:
+            if torch.cuda.is_available():
+                if cuda_device == -1:
+                    self.device = torch.device("cuda")
+                else:
+                    self.device = torch.device(f"cuda:{cuda_device}")
+            else:
+                raise ValueError(
+                    "'use_cuda' set to True when cuda is unavailable."
+                    " Make sure CUDA is available or set use_cuda=False."
+                )
+        else:
+            self.device = "cpu"
+
+        self.results = {}
+
         if not use_cuda:
             self.args["fp16"] = False
-
-        if args:
-            self.args.update(args)
 
         self.args["model_name"] = model_name
         self.args["model_type"] = model_type
@@ -431,16 +428,9 @@ class LanguageModelingModel:
 
         if self.is_world_master():
             tb_writer = SummaryWriter(logdir=args["tensorboard_dir"])
-        train_sampler = (
-            RandomSampler(train_dataset)
-            if args["local_rank"] == -1
-            else DistributedSampler(train_dataset)
-        )
+        train_sampler = RandomSampler(train_dataset) if args["local_rank"] == -1 else DistributedSampler(train_dataset)
         train_dataloader = DataLoader(
-            train_dataset,
-            batch_size=args["train_batch_size"],
-            sampler=train_sampler,
-            collate_fn=collate,
+            train_dataset, batch_size=args["train_batch_size"], sampler=train_sampler, collate_fn=collate,
         )
 
         if args["max_steps"] > 0:
@@ -491,10 +481,7 @@ class LanguageModelingModel:
         # Distributed training (should be after apex fp16 initialization)
         if args["local_rank"] != -1:
             model = torch.nn.parallel.DistributedDataParallel(
-                model,
-                device_ids=[args["local_rank"]],
-                output_device=args["local_rank"],
-                find_unused_parameters=True,
+                model, device_ids=[args["local_rank"]], output_device=args["local_rank"], find_unused_parameters=True,
             )
 
         logger.info(" Training started")
@@ -629,7 +616,7 @@ class LanguageModelingModel:
                         results = self.eval_model(
                             eval_file,
                             verbose=verbose and args["evaluate_during_training_verbose"],
-                            silent=True,
+                            silent=args["evaluate_during_training_silent"],
                             **kwargs,
                         )
 
@@ -726,7 +713,10 @@ class LanguageModelingModel:
 
             if args["evaluate_during_training"]:
                 results = self.eval_model(
-                    eval_file, verbose=verbose and args["evaluate_during_training_verbose"], silent=True, **kwargs
+                    eval_file,
+                    verbose=verbose and args["evaluate_during_training_verbose"],
+                    silent=args["evaluate_during_training_silent"],
+                    **kwargs,
                 )
 
                 self._save_model(output_dir_current, optimizer, scheduler, results=results)
