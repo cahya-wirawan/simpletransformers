@@ -1,5 +1,6 @@
 from simpletransformers.language_modeling import LanguageModelingModel
 import logging
+import argparse
 
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,13 @@ train_args = {
     "mlm": False,
     "output_dir": f"outputs/fine-tuned/",
 }
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--local_rank", type=int, default=-1,
+                    help="Local rank. Necessary for using the torch.distributed.launch utility.")
+args = parser.parse_args()
+
+train_args["local_rank"] = args.local_rank
 
 model = LanguageModelingModel("gpt2", "gpt2", args=train_args)
 
